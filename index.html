@@ -1,0 +1,300 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>银河系模拟与宇宙回响</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden; /* 隐藏滚动条 */
+            font-family: 'Inter', sans-serif; /* 使用 Inter 字体 */
+            background-color: #000000; /* 深黑色背景 */
+            color: #ffffff; /* 白色文字 */
+        }
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            padding: 10px 15px;
+            background-color: rgba(0, 0, 0, 0.7);
+            border-radius: 8px;
+            color: #fff;
+            font-size: 14px;
+            z-index: 100;
+            max-width: 300px;
+        }
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            font-size: 24px;
+            z-index: 200;
+            text-align: center;
+        }
+        canvas {
+            display: block; /* 确保 canvas 是块级元素 */
+        }
+        #gemini-feature {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            padding: 15px;
+            background-color: rgba(20, 20, 40, 0.85); /* 深蓝紫色背景 */
+            border: 1px solid rgba(100, 100, 220, 0.7);
+            border-radius: 8px;
+            color: #e0e0ff; /* 淡紫色文字 */
+            font-size: 14px;
+            z-index: 100;
+            width: 320px;
+            box-shadow: 0 0 15px rgba(100, 100, 255, 0.3);
+        }
+        #gemini-button {
+            background-color: #4a4a8a; /* 深蓝紫色按钮 */
+            color: #ffffff;
+            padding: 8px 15px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+            margin-top: 10px;
+            width: 100%;
+        }
+        #gemini-button:hover {
+            background-color: #6a6aaf; /* 悬停时变亮 */
+        }
+        #gemini-response {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: rgba(0,0,0,0.3);
+            border-radius: 5px;
+            min-height: 60px;
+            font-style: italic;
+            color: #c0c0f0; /* 响应文本颜色 */
+            white-space: pre-wrap; /* 保持换行 */
+            word-wrap: break-word; /* 自动换行 */
+        }
+        .gemini-loading-text {
+            color: #aaaaff;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body class="bg-black">
+    <div id="info">
+        <h1 class="text-xl font-bold mb-2">银河系模拟</h1>
+        <p>使用鼠标拖动旋转，滚轮缩放。</p>
+        <p>正在模拟约 10 万颗恒星。</p>
+    </div>
+
+    <div id="gemini-feature">
+        <h2 class="text-lg font-semibold mb-2 text-center">宇宙回响 ✨</h2>
+        <div id="gemini-response">仰望星空，等待来自宇宙的启示...</div>
+        <button id="gemini-button">聆听星语</button>
+        <div id="gemini-loading" class="gemini-loading-text mt-2" style="display: none;">正在接收来自群星的讯息...</div>
+    </div>
+
+    <div id="loading">
+        <p>群星汇聚中...</p>
+        <p class="text-sm mt-2">(首次加载可能需要一些时间)</p>
+    </div>
+    <div id="container"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script type="module">
+        // Three.js 初始化
+        let scene, camera, renderer, controls;
+        let galaxyParticles; // 用于存储星系粒子系统
+
+        // 星系参数
+        const numStars = 100000; // 恒星数量
+        const galaxyRadius = 300; // 银河系半径
+        const armTurns = 2.0; // 旋臂缠绕圈数
+        const armSpread = 0.4; // 旋臂发散程度
+        const coreConcentration = 0.8; // 核心集中度 (0-1, 越大越集中)
+        const coreSizeFactor = 0.15; // 核心大小比例
+        const thickness = 20; // 银河盘面厚度
+
+        // Gemini API 相关元素
+        const geminiButton = document.getElementById('gemini-button');
+        const geminiResponseDiv = document.getElementById('gemini-response');
+        const geminiLoadingDiv = document.getElementById('gemini-loading');
+
+        function init() {
+            const container = document.getElementById('container');
+            const loadingDiv = document.getElementById('loading');
+
+            // 场景
+            scene = new THREE.Scene();
+
+            // 相机
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera.position.set(0, galaxyRadius * 0.5, galaxyRadius * 0.8); // 从斜上方观察
+            camera.lookAt(scene.position);
+
+            // 渲染器
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio); // 适配高分屏
+            container.appendChild(renderer.domElement);
+
+            // 光照 (环境光，使粒子可见)
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+
+            // 创建银河系
+            createGalaxy();
+
+            // 控制器
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true; // 启用阻尼效果，使旋转更平滑
+            controls.dampingFactor = 0.05;
+            controls.screenSpacePanning = false; // 禁止屏幕空间平移
+            controls.minDistance = 50;
+            controls.maxDistance = galaxyRadius * 2;
+            controls.autoRotate = true; // 自动旋转
+            controls.autoRotateSpeed = 0.1; // 自动旋转速度
+
+            // 窗口大小调整事件
+            window.addEventListener('resize', onWindowResize, false);
+            
+            // Gemini API按钮事件监听
+            geminiButton.addEventListener('click', fetchCosmicMessage);
+
+            loadingDiv.style.display = 'none'; // 隐藏加载提示
+            animate();
+        }
+
+        function createGalaxy() {
+            const positions = []; // 存储恒星位置
+            const colors = [];    // 存储恒星颜色
+
+            const colorInside = new THREE.Color(0xffe580); // 核心区域颜色 (偏黄)
+            const colorOutside = new THREE.Color(0x80c0ff); // 旋臂外围颜色 (偏蓝)
+
+            for (let i = 0; i < numStars; i++) {
+                const r = Math.random() * galaxyRadius; 
+                let angle = Math.random() * Math.PI * 2; 
+                const armOffset = (r / galaxyRadius) * armTurns * Math.PI * 2 * armSpread;
+                angle += armOffset;
+                
+                let currentRadius = r;
+                if (Math.random() < coreConcentration) {
+                    currentRadius = Math.pow(Math.random(), 2) * galaxyRadius * coreSizeFactor + 
+                                    Math.random() * galaxyRadius * (1 - coreSizeFactor) * 0.1; 
+                } else {
+                     currentRadius = galaxyRadius * coreSizeFactor + Math.pow(Math.random(), 0.8) * galaxyRadius * (1 - coreSizeFactor);
+                }
+                
+                if (currentRadius < 1) currentRadius = 1 + Math.random()*5;
+
+                const x = Math.cos(angle) * currentRadius;
+                const y = Math.sin(angle) * currentRadius;
+
+                const z_rand = (Math.random() - 0.5) * 2; 
+                const z_factor = Math.exp(-Math.pow(currentRadius / (galaxyRadius * 0.7), 2)); 
+                const z = z_rand * thickness * z_factor * (0.5 + Math.random() * 0.5); 
+
+                positions.push(x, y, z);
+
+                const distToCenter = Math.sqrt(x*x + y*y + z*z);
+                const colorLerpFactor = Math.min(distToCenter / (galaxyRadius * 0.6), 1.0); 
+                
+                const starColor = new THREE.Color();
+                starColor.lerpColors(colorInside, colorOutside, colorLerpFactor);
+                
+                const brightnessVariation = 0.7 + Math.random() * 0.6; 
+                starColor.multiplyScalar(brightnessVariation);
+
+                colors.push(starColor.r, starColor.g, starColor.b);
+            }
+
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+            const material = new THREE.PointsMaterial({
+                size: 0.5, 
+                vertexColors: true, 
+                blending: THREE.AdditiveBlending, 
+                transparent: true,
+                opacity: 0.8,
+                depthWrite: false 
+            });
+
+            galaxyParticles = new THREE.Points(geometry, material);
+            scene.add(galaxyParticles);
+        }
+
+        async function fetchCosmicMessage() {
+            geminiResponseDiv.textContent = ''; // 清空旧消息
+            geminiLoadingDiv.style.display = 'block'; // 显示加载提示
+            geminiButton.disabled = true; // 禁用按钮防止重复点击
+
+            const prompt = "请用中文生成一句关于宇宙、星空或人生意义的富有诗意或哲理的短语或引言，风格空灵、引人深思。长度在50-100字左右。";
+            let chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+            const payload = { contents: chatHistory };
+            const apiKey = ""; // API Key 将由 Canvas 环境自动提供
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    console.error('Gemini API Error:', errorData);
+                    geminiResponseDiv.textContent = `抱歉，无法连接到星海网络 (${response.status})。请稍后再试。`;
+                    return;
+                }
+
+                const result = await response.json();
+
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const text = result.candidates[0].content.parts[0].text;
+                    geminiResponseDiv.textContent = text;
+                } else {
+                    console.error('Gemini API Error: Unexpected response structure', result);
+                    geminiResponseDiv.textContent = '未能捕捉到宇宙的低语，请再试一次。';
+                }
+            } catch (error) {
+                console.error('Error fetching cosmic message:', error);
+                geminiResponseDiv.textContent = '与星辰的通讯似乎中断了，请检查您的网络连接。';
+            } finally {
+                geminiLoadingDiv.style.display = 'none'; // 隐藏加载提示
+                geminiButton.disabled = false; // 重新启用按钮
+            }
+        }
+
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update(); 
+            renderer.render(scene, camera);
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
+    </script>
+</body>
+</html>
